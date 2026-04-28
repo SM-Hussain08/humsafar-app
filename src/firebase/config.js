@@ -2,12 +2,13 @@
 
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getDatabase } from "firebase/database";
 
 // Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyCfPbYdg6zGPiIe0K7MLkK2bj_NYmABah0",
   authDomain: "humsafar-app-3000b.firebaseapp.com",
+  databaseURL: "https://humsafar-app-3000b-default-rtdb.firebaseio.com",
   projectId: "humsafar-app-3000b",
   storageBucket: "humsafar-app-3000b.firebasestorage.app",
   messagingSenderId: "494647434719",
@@ -19,7 +20,7 @@ const app = initializeApp(firebaseConfig);
 
 // Firebase services
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const db = getDatabase(app);
 
 // Export app (optional but recommended)
 export default app;
