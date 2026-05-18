@@ -1,77 +1,190 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  MapPin,
-  Navigation,
-  School,
   UserRound,
-  Music,
-  ShieldCheck,
+  MapPin,
+  Eye,
+  EyeOff,
+  LockKeyhole,
+  CheckCircle2,
+  Car,
+  Home,
+  Camera,
+  Upload,
 } from "lucide-react";
 
 import ScreenWrapper from "../components/ScreenWrapper";
 import Button from "../components/Button";
+import { createUserAccount } from "../utils/userService";
 
 function ProfileSetup() {
   const navigate = useNavigate();
-  const role = localStorage.getItem("humsafarRole") || "passenger";
-  const savedEmail = localStorage.getItem("humsafarEmail") || "";
+
+  const pendingUser = JSON.parse(localStorage.getItem("humsafarPendingUser")) || {};
+  const verified = localStorage.getItem("humsafarEmailVerified") === "true";
+
+  const generatedErp = useMemo(() => {
+    const existingErp = localStorage.getItem("humsafarGeneratedErp");
+
+    if (existingErp) return existingErp;
+
+    const newErp = String(Math.floor(100000 + Math.random() * 900000));
+    localStorage.setItem("humsafarGeneratedErp", newErp);
+    return newErp;
+  }, []);
 
   const [form, setForm] = useState({
-    name: "",
-    email: savedEmail,
-    phone: "",
-    direction: "To Campus",
-    campus: "Main Campus",
-    address: "",
-    day: "Monday",
-    startTime: "11:40",
-    endTime: "3:45",
-    genderPreference: "No preference",
-    musicPreference: "Music friendly",
-    carName: "",
-    carNumber: "",
-    seats: "3",
-    fare: "350",
+    name: pendingUser.name || localStorage.getItem("humsafarName") || "",
+    email: pendingUser.email || localStorage.getItem("humsafarEmail") || "",
+    erp: generatedErp,
+    gender: "",
+    homeAddress: "",
+    password: "",
+    confirmPassword: "",
+    profilePhoto: "",
   });
 
-  const [error, setError] = useState("");
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [status, setStatus] = useState({ type: "", text: "" });
+  const [loading, setLoading] = useState(false);
+
+  const quickAreas = [
+    "Gulshan-e-Iqbal, Karachi",
+    "DHA Phase 6, Karachi",
+    "Clifton, Karachi",
+    "North Nazimabad, Karachi",
+    "PECHS, Karachi",
+  ];
 
   const updateForm = (field, value) => {
     setForm({ ...form, [field]: value });
-    setError("");
+    setStatus({ type: "", text: "" });
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const getInitials = () => {
+    if (!form.name.trim()) return "HS";
 
-    if (!form.name || !form.phone || !form.address) {
-      setError("Please fill name, phone, and location address.");
+    return form.name
+      .split(" ")
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+  };
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setStatus({
+        type: "error",
+        text: "Please upload a valid image file.",
+      });
       return;
     }
 
-    if (role === "rider" && (!form.carName || !form.carNumber || !form.fare)) {
-      setError("Please fill car details and fare.");
-      return;
-    }
+    const reader = new FileReader();
 
-    const profileData = {
-      ...form,
-      role,
-      pickup:
-        form.direction === "To Campus" ? form.address : form.campus,
-      dropoff:
-        form.direction === "To Campus" ? form.campus : form.address,
+    reader.onloadend = () => {
+      setPhotoPreview(reader.result);
+      updateForm("profilePhoto", reader.result);
     };
 
-    localStorage.setItem("humsafarProfile", JSON.stringify(profileData));
+    reader.readAsDataURL(file);
+  };
 
-    if (role === "passenger") {
-      navigate("/passenger");
-    } else {
-      navigate("/rider");
+  const validateForm = () => {
+    if (!verified) {
+      return "Please verify your email before completing profile setup.";
     }
+
+    if (
+      !form.name ||
+      !form.email ||
+      !form.erp ||
+      !form.gender ||
+      !form.homeAddress ||
+      !form.password ||
+      !form.confirmPassword
+    ) {
+      return "Please complete all required profile fields.";
+    }
+
+    if (form.password.length < 6) {
+      return "Password should be at least 6 characters.";
+    }
+
+    if (form.password !== form.confirmPassword) {
+      return "Password and confirm password do not match.";
+    }
+
+    return "";
+  };
+
+  const buildBasicAccount = () => ({
+    name: form.name.trim(),
+    email: form.email.trim().toLowerCase(),
+    erp: form.erp,
+    gender: form.gender,
+    homeAddress: form.homeAddress.trim(),
+    password: form.password,
+    profilePhoto: form.profilePhoto,
+    isPassenger: true,
+    hasRiderProfile: false,
+  });
+
+  const handleCreateAccount = async () => {
+    const error = validateForm();
+
+    if (error) {
+      setStatus({ type: "error", text: error });
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const createdUser = await createUserAccount(buildBasicAccount());
+
+      localStorage.setItem("humsafarCurrentUser", JSON.stringify(createdUser));
+      localStorage.removeItem("humsafarPendingUser");
+      localStorage.removeItem("humsafarRegisterMode");
+      localStorage.removeItem("humsafarEmailVerified");
+      localStorage.removeItem("humsafarGeneratedErp");
+
+      setStatus({
+        type: "success",
+        text: "Account successfully created! You can now login as a passenger.",
+      });
+
+      setTimeout(() => {
+        navigate("/login");
+      }, 1200);
+    } catch (error) {
+      setStatus({
+        type: "error",
+        text: "Could not create account. Please try again.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddRiderProfile = () => {
+    const error = validateForm();
+
+    if (error) {
+      setStatus({ type: "error", text: error });
+      return;
+    }
+
+    localStorage.setItem("humsafarBasicProfileDraft", JSON.stringify(buildBasicAccount()));
+    navigate("/rider-profile-setup");
   };
 
   return (
@@ -83,8 +196,8 @@ function ProfileSetup() {
           </div>
 
           <span className="chip">
-            <ShieldCheck size={14} />
-            {role === "passenger" ? "Passenger setup" : "Rider setup"}
+            <CheckCircle2 size={14} />
+            Email verified
           </span>
         </div>
 
@@ -93,23 +206,62 @@ function ProfileSetup() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55 }}
         >
+          <div className="page-mini-label">
+            <Home size={14} />
+            Passenger account setup
+          </div>
+
           <h1 style={{ fontSize: "34px", lineHeight: "1.1", marginBottom: "10px" }}>
-            Set up your ride profile
+            Complete your profile
           </h1>
 
           <p className="muted-text">
-            Add your route, schedule, and preferences for a smooth campus ride.
+            Every Humsafar user starts as a passenger. You can add a rider profile
+            now or later.
           </p>
+
+          <div className="step-dots">
+            <span className="step-dot active"></span>
+            <span className="step-dot active"></span>
+            <span className="step-dot active"></span>
+          </div>
         </motion.div>
 
-        <motion.form
-          onSubmit={handleSubmit}
+        <motion.div
           className="card"
           initial={{ opacity: 0, y: 22 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, delay: 0.15 }}
           style={{ marginTop: "22px" }}
         >
+          <h3 className="form-card-title">Basic details</h3>
+          <p className="form-card-subtitle">
+            This information will be used for your passenger profile.
+          </p>
+
+          <div className="profile-photo-section">
+            <div className="avatar-preview">
+              {photoPreview ? (
+                <img src={photoPreview} alt="Profile preview" />
+              ) : (
+                <span>{getInitials()}</span>
+              )}
+            </div>
+
+            <div className="photo-copy">
+              <h3>Profile picture</h3>
+              <p>Recommended for trust and safety, but optional for demo.</p>
+
+              <label className="upload-photo-btn">
+                <Upload size={15} />
+                Upload photo
+                <input type="file" accept="image/*" onChange={handlePhotoUpload} />
+              </label>
+            </div>
+
+            <Camera className="photo-floating-icon" size={18} />
+          </div>
+
           <div className="input-group">
             <label>Full Name</label>
             <input
@@ -121,80 +273,72 @@ function ProfileSetup() {
 
           <div className="input-group">
             <label>University Email</label>
-            <input
-              value={form.email}
-              onChange={(e) => updateForm("email", e.target.value)}
-            />
+            <input value={form.email} disabled />
           </div>
 
-          <div className="input-group">
-            <label>Phone Number</label>
-            <input
-              placeholder="e.g. 0300-1234567"
-              value={form.phone}
-              onChange={(e) => updateForm("phone", e.target.value)}
-            />
+          <div className="input-row">
+            <div className="input-group">
+              <label>ERP</label>
+              <input value={form.erp} disabled />
+              <p className="input-helper">
+                Auto-fetched from university records against your email.
+              </p>
+            </div>
+
+            <div className="input-group">
+              <label>Gender</label>
+              <select
+                value={form.gender}
+                onChange={(e) => updateForm("gender", e.target.value)}
+              >
+                <option value="">Select</option>
+                <option>Female</option>
+                <option>Male</option>
+                <option>Prefer not to say</option>
+              </select>
+            </div>
           </div>
 
-          <div className="input-group">
-            <label>Ride Direction</label>
-            <select
-              value={form.direction}
-              onChange={(e) => updateForm("direction", e.target.value)}
-            >
-              <option>To Campus</option>
-              <option>From Campus</option>
-            </select>
-          </div>
-
-          <div className="input-group">
-            <label>Campus</label>
-            <select
-              value={form.campus}
-              onChange={(e) => updateForm("campus", e.target.value)}
-            >
-              <option>Main Campus</option>
-              <option>City Campus</option>
-            </select>
-          </div>
-
-          <div className="input-group">
-            <label>
-              {form.direction === "To Campus"
-                ? "Pickup Location"
-                : "Drop-off Location"}
-            </label>
-            <input
-              placeholder={
-                form.direction === "To Campus"
-                  ? "e.g. Gulshan-e-Iqbal, Block 13"
-                  : "e.g. DHA Phase 6, Karachi"
-              }
-              value={form.address}
-              onChange={(e) => updateForm("address", e.target.value)}
-            />
-          </div>
-
-          <div
-            className="card"
-            style={{
-              background: "linear-gradient(135deg, #ecfeff, #fff7ed)",
-              boxShadow: "none",
-              marginBottom: "16px",
-            }}
-          >
-            <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-              <div className="logo-mark" style={{ width: "42px", height: "42px" }}>
-                <Navigation size={20} />
-              </div>
-
+          <div className="map-picker">
+            <div className="map-picker-head">
               <div>
-                <b>Demo map preview</b>
-                <p className="muted-text" style={{ margin: "4px 0 0", fontSize: "13px" }}>
-                  {form.direction === "To Campus"
-                    ? `${form.address || "Your pickup location"} → ${form.campus}`
-                    : `${form.campus} → ${form.address || "Your drop-off location"}`}
-                </p>
+                <h3>Home address</h3>
+                <p>Choose your usual pickup/drop-off area.</p>
+              </div>
+              <MapPin size={22} />
+            </div>
+
+            <div className="input-group">
+              <label>Address</label>
+              <input
+                placeholder="e.g. Gulshan-e-Iqbal, Block 13, Karachi"
+                value={form.homeAddress}
+                onChange={(e) => updateForm("homeAddress", e.target.value)}
+              />
+            </div>
+
+            <div className="quick-area-grid">
+              {quickAreas.map((area) => (
+                <button
+                  type="button"
+                  key={area}
+                  className={form.homeAddress === area ? "quick-area active" : "quick-area"}
+                  onClick={() => updateForm("homeAddress", area)}
+                >
+                  {area.split(",")[0]}
+                </button>
+              ))}
+            </div>
+
+            <div className="fake-map">
+              <div className="map-line line-one"></div>
+              <div className="map-line line-two"></div>
+              <div className="map-line line-three"></div>
+              <div className="map-pin">
+                <MapPin size={24} />
+              </div>
+              <div className="map-location-label">
+                {form.homeAddress || "Select or type your home address"}
               </div>
             </div>
 
@@ -203,143 +347,73 @@ function ProfileSetup() {
               className="secondary-btn"
               style={{ marginTop: "14px", padding: "12px" }}
               onClick={() =>
-                updateForm(
-                  "address",
-                  form.direction === "To Campus"
-                    ? "Gulshan-e-Iqbal, Block 13, Karachi"
-                    : "DHA Phase 6, Karachi"
-                )
+                updateForm("homeAddress", "Gulshan-e-Iqbal, Block 13, Karachi")
               }
             >
-              <MapPin size={15} style={{ verticalAlign: "middle" }} /> Use demo pinned location
+              Use demo pinned location
             </button>
           </div>
 
+          <h3 className="form-card-title" style={{ marginTop: "20px" }}>
+            Create password
+          </h3>
+
           <div className="input-group">
-            <label>Day</label>
-            <select value={form.day} onChange={(e) => updateForm("day", e.target.value)}>
-              <option>Monday</option>
-              <option>Tuesday</option>
-              <option>Wednesday</option>
-              <option>Thursday</option>
-              <option>Friday</option>
-              <option>Saturday</option>
-            </select>
-          </div>
-
-          <div className="input-row">
-            <div className="input-group">
-              <label>Start Time</label>
+            <label>Password</label>
+            <div className="password-wrap">
+              <LockKeyhole size={16} />
               <input
-                type="time"
-                value={form.startTime}
-                onChange={(e) => updateForm("startTime", e.target.value)}
+                type={showPassword ? "text" : "password"}
+                placeholder="Minimum 6 characters"
+                value={form.password}
+                onChange={(e) => updateForm("password", e.target.value)}
               />
+              <button type="button" onClick={() => setShowPassword(!showPassword)}>
+                {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
             </div>
+          </div>
 
-            <div className="input-group">
-              <label>End Time</label>
+          <div className="input-group">
+            <label>Confirm Password</label>
+            <div className="password-wrap">
+              <LockKeyhole size={16} />
               <input
-                type="time"
-                value={form.endTime}
-                onChange={(e) => updateForm("endTime", e.target.value)}
+                type={showConfirmPassword ? "text" : "password"}
+                placeholder="Re-enter password"
+                value={form.confirmPassword}
+                onChange={(e) => updateForm("confirmPassword", e.target.value)}
               />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              >
+                {showConfirmPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
             </div>
           </div>
 
-          <div className="input-row">
-            <div className="input-group">
-              <label>Gender Preference</label>
-              <select
-                value={form.genderPreference}
-                onChange={(e) => updateForm("genderPreference", e.target.value)}
-              >
-                <option>No preference</option>
-                <option>Female preferred</option>
-                <option>Male preferred</option>
-              </select>
+          {status.text && (
+            <div className={status.type === "success" ? "success-box" : "error-box"}>
+              {status.text}
             </div>
-
-            <div className="input-group">
-              <label>Music Preference</label>
-              <select
-                value={form.musicPreference}
-                onChange={(e) => updateForm("musicPreference", e.target.value)}
-              >
-                <option>Music friendly</option>
-                <option>Quiet ride</option>
-                <option>No preference</option>
-              </select>
-            </div>
-          </div>
-
-          {role === "rider" && (
-            <>
-              <div className="input-group">
-                <label>Car Name / Model</label>
-                <input
-                  placeholder="e.g. Honda City"
-                  value={form.carName}
-                  onChange={(e) => updateForm("carName", e.target.value)}
-                />
-              </div>
-
-              <div className="input-group">
-                <label>Car Number</label>
-                <input
-                  placeholder="e.g. ABC-123"
-                  value={form.carNumber}
-                  onChange={(e) => updateForm("carNumber", e.target.value)}
-                />
-              </div>
-
-              <div className="input-row">
-                <div className="input-group">
-                  <label>Seats Available</label>
-                  <input
-                    type="number"
-                    value={form.seats}
-                    onChange={(e) => updateForm("seats", e.target.value)}
-                  />
-                </div>
-
-                <div className="input-group">
-                  <label>Fare per Seat</label>
-                  <input
-                    type="number"
-                    value={form.fare}
-                    onChange={(e) => updateForm("fare", e.target.value)}
-                  />
-                </div>
-              </div>
-            </>
           )}
 
-          {error && (
-            <p style={{ color: "#e11d48", fontSize: "13px", fontWeight: 700 }}>
-              {error}
-            </p>
-          )}
+          <div style={{ display: "grid", gap: "12px" }}>
+            <Button type="button" loading={loading} onClick={handleCreateAccount}>
+              {loading ? "Creating account..." : "Create Account"}
+            </Button>
 
-          <Button type="submit">
-            {role === "passenger" ? "Find available rides" : "Create rider profile"}
-          </Button>
-
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "16px" }}>
-            <span className="chip">
-              <School size={13} />
-              {form.campus}
-            </span>
-            <span className="chip">
-              <MapPin size={13} />
-              {form.direction}
-            </span>
-            <span className="chip">
-              <Music size={13} />
-              {form.musicPreference}
-            </span>
+            <Button type="button" variant="secondary" onClick={handleAddRiderProfile}>
+              <Car size={16} style={{ verticalAlign: "middle", marginRight: "6px" }} />
+              Add Rider Profile
+            </Button>
           </div>
-        </motion.form>
+
+          <p className="form-footer-note">
+            You can use this email and password to login after account creation.
+          </p>
+        </motion.div>
       </div>
     </ScreenWrapper>
   );
